@@ -1,0 +1,31 @@
+# 300B IDS suricata override — /etc/suricata/suricata.yaml 와 병합되지 않고
+# entrypoint 가 메인 설정에 sed 로 일부 키만 오버라이드 한다 (호환성 위해 단순화).
+
+# 참고용 — 실제 적용은 entrypoint.sh 의 sed 단계에서.
+HOME_NET: "[172.30.10.0/24,172.30.20.0/24,172.30.30.0/24,172.30.40.0/24]"
+EXTERNAL_NET: "!$HOME_NET"
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filename: /var/log/suricata/eve.json
+      types:
+        - alert
+        - http
+        - dns
+        - tls
+        - flow
+
+af-packet:
+  - interface: eth0          # dmz 측 sniff
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+
+logging:
+  default-log-level: info
+  outputs:
+    - file:
+        enabled: yes
+        filename: /var/log/suricata/suricata.log

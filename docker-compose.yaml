@@ -1,17 +1,30 @@
 # =========================================================
-# 300B 실습 환경 — 학생 1인용 단일 VM 통합 compose
+# 300B 실습 환경 — 4-tier (AWS-style) 단일 VM 통합 compose
 # =========================================================
-# 컨테이너 구성 (총 14개):
-#   코어 5  : 300b-secu / 300b-web / 300b-siem / 300b-bastion / 300b-attacker
-#   Wazuh 3 : wazuh-manager / wazuh-indexer / wazuh-dashboard
-#   취약 6  : juiceshop / dvwa / neobank / govportal / mediforum /
-#            adminconsole / aicompanion  (실제로는 7 — vuln 5 + juice + dvwa)
+# 컨테이너 구성 (총 17개):
+#   Edge        : 300b-fw                  (nftables DNAT + dnsmasq)
+#   DMZ         : 300b-waf                 (Apache + ModSecurity reverse proxy)
+#   IDS sidecar : 300b-ids                 (Suricata IDS)
+#   Private     : juiceshop / dvwa /
+#                 neobank / govportal /
+#                 mediforum / adminconsole /
+#                 aicompanion              (외부 포트 노출 ❌)
+#   Mgmt        : 300b-secu / 300b-siem /
+#                 300b-bastion / 300b-attacker
+#   Wazuh       : wazuh-manager /
+#                 wazuh-indexer /
+#                 wazuh-dashboard
 #
-# 네트워크 2개:
-#   300b-edu  — 공방전 트래픽 (attacker ↔ web/vuln-sites)
-#   300b-mgmt — 관리·로그 트래픽 (bastion ↔ 모든 코어, siem ↔ wazuh)
+# 네트워크 (4 + Wazuh 1):
+#   300b-edge    172.30.10.0/24   public-facing  (fw, ids 만)
+#   300b-dmz     172.30.20.0/24   fw ↔ waf       (fw, waf, ids)
+#   300b-private 172.30.30.0/24   vuln backends   (Phase B 에서 internal: true 적용 예정)
+#   300b-mgmt    172.30.40.0/24   ops 망          (secu, siem, bastion, attacker, waf, wazuh-*)
 #
-# 모든 코어 컨테이너는 host port (.env 정의) 로 SSH 노출.
+# 외부 노출 host port (단 2종):
+#   80,443   → 300b-fw  (HTTPS 는 Phase C 에서 활성)
+#   2204     → 300b-bastion  (SSH jumphost)
+#   8003     → 300b-bastion  (Bastion API — Phase 후속에서 waf 경유로 통합 가능)
 # ---------------------------------------------------------
 
 x-common: &common-restart
@@ -19,7 +32,82 @@ x-common: &common-restart
 
 services:
 
-  # ========== 코어 ==========
+  # ============================================
+  # Edge tier
+  # ============================================
+  300b-fw:
+    build:
+      context: .
+      dockerfile: fw/Dockerfile
+    image: 300b/fw:standalone
+    container_name: 300b-fw
+    hostname: 300b-fw
+    cap_add: [NET_ADMIN, NET_RAW]
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.rp_filter: 0
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      ENABLE_DNSMASQ: ${ENABLE_DNSMASQ:-false}      # Phase D 에서 true
+    networks:
+      300b-edge:
+        ipv4_address: 172.30.10.10
+      300b-dmz:
+        ipv4_address: 172.30.20.10
+      300b-mgmt:
+        # 정적 할당 X — 다른 mgmt 컨테이너가 먼저 떠서 IP 점유 가능. 동적으로.
+    ports:
+      - "${PORT_HTTP:-80}:80"
+      - "${PORT_HTTPS:-443}:443"
+    depends_on:
+      - 300b-waf
+    <<: *common-restart
+
+  # ============================================
+  # DMZ tier — WAF (Apache + ModSecurity reverse proxy)
+  # ============================================
+  300b-waf:
+    build:
+      context: .
+      dockerfile: waf/Dockerfile
+    image: 300b/waf:standalone
+    container_name: 300b-waf
+    hostname: 300b-waf
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      ENABLE_TLS: ${ENABLE_TLS:-false}              # Phase C 에서 true
+    networks:
+      300b-dmz:
+        ipv4_address: 172.30.20.20
+      300b-private:
+        # 동적 할당 (fw entrypoint 가 docker DNS 로 해석)
+      300b-mgmt:
+        # 동적 할당
+    <<: *common-restart
+
+  # ============================================
+  # IDS sidecar (passive sniff on dmz)
+  # ============================================
+  300b-ids:
+    build:
+      context: .
+      dockerfile: ids/Dockerfile
+    image: 300b/ids:standalone
+    container_name: 300b-ids
+    hostname: 300b-ids
+    cap_add: [NET_ADMIN, NET_RAW]
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      SURICATA_IFACE: ${SURICATA_IFACE:-eth0}
+    networks: [300b-dmz, 300b-mgmt]
+    <<: *common-restart
+
+  # ============================================
+  # Mgmt tier — security ops
+  # ============================================
   300b-secu:
     build:
       context: .
@@ -33,25 +121,7 @@ services:
     environment:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
-    networks: [300b-edu, 300b-mgmt]
-    ports:
-      - "${SSH_PORT_SECU:-2201}:22"
-    <<: *common-restart
-
-  300b-web:
-    build:
-      context: .
-      dockerfile: web/Dockerfile
-    image: 300b/web:standalone
-    container_name: 300b-web
-    hostname: 300b-web
-    environment:
-      SSH_USER: ${SSH_USER:-ccc}
-      SSH_PASS: ${SSH_PASS:-ccc}
-    networks: [300b-edu, 300b-mgmt]
-    ports:
-      - "${SSH_PORT_WEB:-2202}:22"
-      - "${PORT_WEB_LANDING:-80}:80"
+    networks: [300b-mgmt]
     <<: *common-restart
 
   300b-siem:
@@ -69,9 +139,7 @@ services:
       LLM_MANAGER_MODEL: ${LLM_MANAGER_MODEL:-gpt-oss:120b}
     volumes:
       - 300b-cti-data:/opt/app/contents/threats
-    networks: [300b-edu, 300b-mgmt]
-    ports:
-      - "${SSH_PORT_SIEM:-2203}:22"
+    networks: [300b-mgmt]
     <<: *common-restart
 
   300b-bastion:
@@ -110,13 +178,12 @@ services:
     environment:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
-    networks: [300b-edu, 300b-mgmt]
-    ports:
-      - "${SSH_PORT_ATTACKER:-2205}:22"
+    networks: [300b-mgmt, 300b-private]
     <<: *common-restart
 
-  # ========== Wazuh single-node (공식 4.10 — wazuh-docker repo 패턴) ==========
-  # 첫 기동 전 ./wazuh-certs/certs 에 SSL 인증서 생성 필요 (300b.sh 자동 처리).
+  # ============================================
+  # Wazuh single-node (mgmt 망)
+  # ============================================
   wazuh-indexer:
     image: wazuh/wazuh-indexer:4.10.0
     container_name: wazuh-indexer
@@ -137,7 +204,7 @@ services:
       - ./wazuh-certs/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml
     networks:
       300b-mgmt:
-        aliases: [wazuh.indexer]
+        aliases: [wazuh.indexer, wazuh-indexer]
     <<: *common-restart
 
   wazuh-manager:
@@ -167,15 +234,9 @@ services:
       - ./wazuh-certs/certs/wazuh.manager.pem:/etc/ssl/filebeat.pem
       - ./wazuh-certs/certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key
     networks:
-      300b-edu:
-        aliases: [wazuh.manager]
       300b-mgmt:
-        aliases: [wazuh.manager]
-    ports:
-      - "1514:1514"
-      - "1515:1515"
-      - "514:514/udp"
-      - "55000:55000"
+        aliases: [wazuh.manager, wazuh-manager]
+    # 1514/agent, 1515/registration 은 mgmt 내부에서만 접근. 514/syslog 도 내부.
     <<: *common-restart
 
   wazuh-dashboard:
@@ -199,28 +260,25 @@ services:
       - ./wazuh-certs/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
     networks:
       300b-mgmt:
-        aliases: [wazuh.dashboard]
-    ports:
-      - "${PORT_WAZUH_DASHBOARD:-1443}:5601"
+        aliases: [wazuh.dashboard, wazuh-dashboard]
+    # Dashboard 도 외부 포트 노출 X. waf 의 wazuh.300b vhost 만으로 접근.
     <<: *common-restart
 
-  # ========== 취약 웹 (별도 서비스 — vuln-sites 폴더 컨텍스트 빌드) ==========
+  # ============================================
+  # Private tier — vuln backends (외부 포트 노출 ❌)
+  # ============================================
   juiceshop:
     image: bkimminich/juice-shop:latest
     container_name: juiceshop
     hostname: juiceshop
-    networks: [300b-edu]
-    ports:
-      - "${PORT_JUICESHOP:-3000}:3000"
+    networks: [300b-private]
     <<: *common-restart
 
   dvwa:
     image: vulnerables/web-dvwa:latest
     container_name: dvwa
     hostname: dvwa
-    networks: [300b-edu]
-    ports:
-      - "${PORT_DVWA:-8080}:80"
+    networks: [300b-private]
     <<: *common-restart
 
   neobank:
@@ -228,9 +286,7 @@ services:
     image: neobank:vulnerable
     container_name: neobank
     hostname: neobank
-    networks: [300b-edu]
-    ports:
-      - "${PORT_NEOBANK:-3001}:3001"
+    networks: [300b-private]
     <<: *common-restart
 
   govportal:
@@ -238,9 +294,7 @@ services:
     image: govportal:vulnerable
     container_name: govportal
     hostname: govportal
-    networks: [300b-edu]
-    ports:
-      - "${PORT_GOVPORTAL:-3002}:3002"
+    networks: [300b-private]
     <<: *common-restart
 
   mediforum:
@@ -248,9 +302,7 @@ services:
     image: mediforum:vulnerable
     container_name: mediforum
     hostname: mediforum
-    networks: [300b-edu]
-    ports:
-      - "${PORT_MEDIFORUM:-3003}:3003"
+    networks: [300b-private]
     <<: *common-restart
 
   adminconsole:
@@ -258,9 +310,7 @@ services:
     image: adminconsole:vulnerable
     container_name: adminconsole
     hostname: adminconsole
-    networks: [300b-edu]
-    ports:
-      - "${PORT_ADMINCONSOLE:-3004}:3004"
+    networks: [300b-private]
     <<: *common-restart
 
   aicompanion:
@@ -274,15 +324,31 @@ services:
       OLLAMA_MODEL: ${LLM_SUBAGENT_MODEL:-gemma3:4b}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks: [300b-edu]
-    ports:
-      - "${PORT_AICOMPANION:-3005}:3005"
+    # AICompanion 은 LLM 외부 GPU 서버로 outbound 필요 → mgmt 망에도 join.
+    # Phase B 에서 private 가 internal: true 가 되어도 이 dual-NIC 가 LLM 경로 보존.
+    networks: [300b-private, 300b-mgmt]
     <<: *common-restart
 
+# ============================================
+# Networks
+# ============================================
 networks:
-  300b-edu:
-    name: 300b-edu
+  300b-edge:
+    name: 300b-edge
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+  300b-dmz:
+    name: 300b-dmz
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.20.0/24
+  300b-private:
+    name: 300b-private
+    driver: bridge
+    # Phase B 에서 internal: true 로 변경 — 그 전엔 vuln 사이트 outbound 가능.
     ipam:
       config:
         - subnet: 172.30.30.0/24

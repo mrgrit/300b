@@ -126,23 +126,35 @@ cmd_status() {
     VMIP="$(hostname -I | awk '{print $1}')"
     cat <<EOF
 ─── 외부 접속 정보 (Windows → VM IP: ${VMIP}) ───
-SSH:
-  ssh ${CCC_SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_SECU:-2201}      # secu
-  ssh ${CCC_SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_WEB:-2202}       # web
-  ssh ${CCC_SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_SIEM:-2203}      # siem
-  ssh ${CCC_SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_BASTION:-2204}   # bastion
-  ssh ${CCC_SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_ATTACKER:-2205}  # attacker
+SSH (bastion 만 노출 — ProxyJump 모델):
+  ssh ${SSH_USER:-ccc}@${VMIP} -p ${SSH_PORT_BASTION:-2204}     # bastion 점프 호스트
 
-웹/대시보드:
-  https://${VMIP}:${PORT_WAZUH_DASHBOARD:-1443}    Wazuh (admin / SecretPassword)
-  http://${VMIP}:${PORT_BASTION_API:-8003}/health  Bastion API
-  http://${VMIP}:${PORT_JUICESHOP:-3000}           Juice Shop
-  http://${VMIP}:${PORT_DVWA:-8080}                DVWA
-  http://${VMIP}:${PORT_NEOBANK:-3001}             NeoBank
-  http://${VMIP}:${PORT_GOVPORTAL:-3002}           GovPortal
-  http://${VMIP}:${PORT_MEDIFORUM:-3003}           MediForum
-  http://${VMIP}:${PORT_ADMINCONSOLE:-3004}        AdminConsole
-  http://${VMIP}:${PORT_AICOMPANION:-3005}         AICompanion
+  내부 컨테이너 (bastion 경유):
+    학생 PC ~/.ssh/config 에 다음 한 번 추가:
+      Host 300b-bastion
+        HostName ${VMIP}
+        Port ${SSH_PORT_BASTION:-2204}
+        User ccc
+      Host 300b-*
+        ProxyJump 300b-bastion
+        User ccc
+    그 후:
+      ssh 300b-attacker / 300b-waf / 300b-secu / 300b-siem / 300b-fw / 300b-ids
+
+웹/대시보드 (모두 fw → waf 경유):
+  http://${VMIP}/                  Landing 페이지 (안내)
+  http://juice.300b/               Juice Shop      (학생 PC /etc/hosts 또는 DNS 설정 후)
+  http://dvwa.300b/                DVWA
+  http://neobank.300b/             NeoBank
+  http://govportal.300b/           GovPortal
+  http://mediforum.300b/           MediForum
+  http://admin.300b/               AdminConsole
+  http://ai.300b/                  AICompanion
+  http://wazuh.300b/               Wazuh Dashboard (admin / SecretPassword)
+  http://bastion.300b/health       Bastion API
+
+학생 PC /etc/hosts 추가 (한 번):
+  ${VMIP} juice.300b dvwa.300b neobank.300b govportal.300b mediforum.300b admin.300b ai.300b wazuh.300b bastion.300b
 EOF
 }
 
@@ -165,29 +177,56 @@ cmd_smoke() {
             printf "  ${RED}✗${NC} %-22s %s  (HTTP %s)\n" "$name" "$url" "$code"; fail=$((fail+1))
         fi
     }
-    echo "─── 헬스 체크 ───"
-    check "300b-web landing"   "http://localhost:${PORT_WEB_LANDING:-80}/"
-    check "bastion /health"    "http://localhost:${PORT_BASTION_API:-8003}/health"
-    check "juiceshop"          "http://localhost:${PORT_JUICESHOP:-3000}/"
-    check "dvwa"               "http://localhost:${PORT_DVWA:-8080}/"
-    check "neobank"            "http://localhost:${PORT_NEOBANK:-3001}/"
-    check "govportal"          "http://localhost:${PORT_GOVPORTAL:-3002}/"
-    check "mediforum"          "http://localhost:${PORT_MEDIFORUM:-3003}/"
-    check "adminconsole"       "http://localhost:${PORT_ADMINCONSOLE:-3004}/"
-    check "aicompanion"        "http://localhost:${PORT_AICOMPANION:-3005}/"
-    check "wazuh dashboard"    "https://localhost:${PORT_WAZUH_DASHBOARD:-1443}/"  "200|301|302|503"
+    echo "─── HTTP 헬스 (모든 트래픽 fw → waf 통과) ───"
+    HTTP_PORT="${PORT_HTTP:-80}"
+    PROXY="http://localhost:${HTTP_PORT}"
+    check_host() {
+        local name="$1" host="$2" path="${3:-/}" expect="${4:-200|301|302}"
+        local code
+        code="$(curl -sk --max-time 8 -H "Host: ${host}" -o /dev/null -w '%{http_code}' "${PROXY}${path}" 2>/dev/null || echo 000)"
+        if echo "$code" | grep -qE "$expect"; then
+            printf "  ${GREEN}✓${NC} %-22s Host:%-22s %s  (HTTP %s)\n" "$name" "$host" "$path" "$code"; pass=$((pass+1))
+        else
+            printf "  ${RED}✗${NC} %-22s Host:%-22s %s  (HTTP %s)\n" "$name" "$host" "$path" "$code"; fail=$((fail+1))
+        fi
+    }
+    check_host "landing"          "localhost"        "/"
+    check_host "juice"            "juice.300b"       "/"
+    check_host "dvwa"             "dvwa.300b"        "/"
+    check_host "neobank"          "neobank.300b"     "/"
+    check_host "govportal"        "govportal.300b"   "/"
+    check_host "mediforum"        "mediforum.300b"   "/"
+    check_host "admin"            "admin.300b"       "/"
+    check_host "ai"               "ai.300b"          "/"
+    check_host "wazuh dashboard"  "wazuh.300b"       "/"   "200|301|302|503"
+    check_host "bastion API"      "bastion.300b"     "/health"
 
     echo
-    echo "─── SSH 헬스 (banner) ───"
-    for entry in "secu:${SSH_PORT_SECU:-2201}" "web:${SSH_PORT_WEB:-2202}" "siem:${SSH_PORT_SIEM:-2203}" "bastion:${SSH_PORT_BASTION:-2204}" "attacker:${SSH_PORT_ATTACKER:-2205}"; do
-        name="${entry%%:*}"; port="${entry##*:}"
-        banner="$(timeout 3 bash -c "exec 3<>/dev/tcp/localhost/$port && head -c 40 <&3" 2>/dev/null || true)"
-        if echo "$banner" | grep -qi "ssh"; then
-            printf "  ${GREEN}✓${NC} %-22s tcp/%s  %s\n" "$name" "$port" "${banner//$'\n'/ }"; pass=$((pass+1))
+    echo "─── SSH 헬스 (bastion 만 외부 노출) ───"
+    port="${SSH_PORT_BASTION:-2204}"
+    banner="$(timeout 3 bash -c "exec 3<>/dev/tcp/localhost/$port && head -c 40 <&3" 2>/dev/null || true)"
+    if echo "$banner" | grep -qi "ssh"; then
+        printf "  ${GREEN}✓${NC} %-22s tcp/%s  %s\n" "bastion" "$port" "${banner//$'\n'/ }"; pass=$((pass+1))
+    else
+        printf "  ${RED}✗${NC} %-22s tcp/%s  banner=%s\n" "bastion" "$port" "${banner:-(empty)}"; fail=$((fail+1))
+    fi
+
+    echo
+    echo "─── 격리 검증 (직접 접근 차단되어야 함) ───"
+    # 이전 모델에서 노출했던 포트들이 이제 차단되어야 함.
+    deny_check() {
+        local name="$1" port="$2"
+        local code
+        code="$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:${port}/" 2>/dev/null || echo 000)"
+        if [ "$code" = "000" ]; then
+            printf "  ${GREEN}✓${NC} %-22s :%s  refused (격리 OK)\n" "$name" "$port"; pass=$((pass+1))
         else
-            printf "  ${RED}✗${NC} %-22s tcp/%s  banner=%s\n" "$name" "$port" "${banner:-(empty)}"; fail=$((fail+1))
+            printf "  ${RED}✗${NC} %-22s :%s  HTTP %s — 직접 노출됨!\n" "$name" "$port" "$code"; fail=$((fail+1))
         fi
-    done
+    }
+    deny_check "juiceshop direct"  "3000"
+    deny_check "dvwa direct"       "8080"
+    deny_check "neobank direct"    "3001"
     echo
     echo "  종합: $pass pass / $fail fail"
     [ $fail -eq 0 ] && echo "  ✅ 전부 통과" || echo "  ⚠️ 일부 fail — bash $0 logs <svc> 로 확인"

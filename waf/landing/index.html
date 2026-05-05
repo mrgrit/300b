@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>300B 실습 환경 — 4-tier 토폴로지</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:920px;margin:2em auto;padding:0 1em;color:#111;line-height:1.5}
+h1{border-bottom:3px solid #06c;padding-bottom:8px;color:#06c}
+h2{border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:2em}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:1em 0}
+a.card{display:block;padding:12px 14px;border:1px solid #ccc;border-radius:6px;text-decoration:none;color:#111;background:#fafafa}
+a.card:hover{border-color:#06c;background:#eef}
+.muted{color:#666;font-size:13px}
+code{background:#eee;padding:1px 4px;border-radius:3px}
+pre{background:#f5f5f5;padding:10px;border-radius:6px;overflow:auto}
+.warn{background:#ffe;border-left:4px solid #fc0;padding:8px 12px;margin:1em 0}
+</style></head><body>
+<h1>300B 실습 환경 — 4-tier (AWS-style)</h1>
+
+<div class="warn">
+이 페이지는 <code>300b-waf</code> (Apache + ModSecurity) 의 <strong>landing vhost</strong> 가 응답한 것입니다.
+모든 트래픽이 <code>fw → waf</code> 를 통과하며 ModSecurity 검사를 받습니다.
+직접 <code>:3000</code>, <code>:8080</code> 등 backend 포트는 외부 노출되지 않습니다.
+</div>
+
+<h2>취약 웹 (학생 PC <code>/etc/hosts</code> 또는 DNS 설정 후 접속)</h2>
+<div class="grid">
+  <a class="card" href="http://juice.300b/">Juice Shop <span class="muted">juice.300b</span></a>
+  <a class="card" href="http://dvwa.300b/">DVWA <span class="muted">dvwa.300b</span></a>
+  <a class="card" href="http://neobank.300b/">NeoBank <span class="muted">neobank.300b</span></a>
+  <a class="card" href="http://govportal.300b/">GovPortal <span class="muted">govportal.300b</span></a>
+  <a class="card" href="http://mediforum.300b/">MediForum <span class="muted">mediforum.300b</span></a>
+  <a class="card" href="http://admin.300b/">AdminConsole <span class="muted">admin.300b</span></a>
+  <a class="card" href="http://ai.300b/">AICompanion <span class="muted">ai.300b</span></a>
+</div>
+
+<h2>운영 콘솔</h2>
+<div class="grid">
+  <a class="card" href="http://wazuh.300b/">Wazuh Dashboard <span class="muted">wazuh.300b (admin / SecretPassword)</span></a>
+  <a class="card" href="http://bastion.300b/health">Bastion API <span class="muted">bastion.300b/health</span></a>
+</div>
+
+<h2>SSH (Bastion 점프 모델)</h2>
+<p>모든 내부 컨테이너 SSH 는 <strong>bastion (port 2204)</strong> 만 외부 노출되어 있습니다.
+다른 컨테이너 (waf, secu, siem, attacker, fw, ids) 는 <code>ProxyJump</code> 로만 접근 가능합니다.</p>
+
+<p>학생 PC <code>~/.ssh/config</code> 에 한 번 추가:</p>
+<pre><code>Host 300b-bastion
+  HostName &lt;VM_IP&gt;
+  Port 2204
+  User ccc
+
+Host 300b-*
+  ProxyJump 300b-bastion
+  User ccc</code></pre>
+
+<p>그러면 다음과 같이 접속:</p>
+<pre><code>ssh 300b-bastion              # 직접 (점프 호스트)
+ssh 300b-attacker             # bastion 경유 자동
+ssh 300b-waf                  # bastion 경유 자동
+ssh 300b-fw                   # bastion 경유 자동
+ssh 300b-ids                  # bastion 경유 자동</code></pre>
+
+<p class="muted">기본 SSH 암호 = <code>ccc</code> (.env 의 SSH_PASS).  Bastion API 키 = <code>300b-api-key-2026</code> (.env 의 API_KEY).</p>
+
+<h2>네트워크 토폴로지</h2>
+<pre>
+                  &lt;VM_IP&gt;:80,443         &lt;VM_IP&gt;:2204
+                       │                      │ SSH
+                  ┌────▼────┐             ┌───▼────┐
+   Edge       →  │ 300b-fw │             │ bastion│
+                  │ nft DNAT│             │ jumphost│
+                  └────┬────┘             └───┬────┘
+                       │                      │
+                  ┌────▼────┐                 │
+   DMZ        →  │ 300b-waf│ ← IDS sniff      │
+                  │ +ModSec │   (Suricata)    │
+                  └────┬────┘                 │
+                       │                      │
+                  ┌────▼─────────────────────┐│
+   Private    →  │ juice/dvwa/neobank/...   ││  Mgmt:
+                  │ (외부 포트 노출 ❌)        ││  wazuh-*, siem,
+                  └──────────────────────────┘│  secu, attacker
+                                              │  (모두 bastion 경유)
+</pre>
+
+</body></html>
