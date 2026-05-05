@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>300B 실습 환경 — 실습 환경</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:780px;margin:2em auto;padding:0 1em;color:#111}
+h1{border-bottom:2px solid #444;padding-bottom:6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:1em}
+a.card{display:block;padding:12px 14px;border:1px solid #ccc;border-radius:6px;text-decoration:none;color:#111;background:#fafafa}
+a.card:hover{border-color:#06c;background:#eef}
+.muted{color:#666;font-size:13px}
+code{background:#eee;padding:1px 4px;border-radius:3px}
+</style></head><body>
+<h1>300B 실습 환경 실습 환경</h1>
+<p>이 페이지는 web 컨테이너의 Apache + ModSecurity가 정상 동작 중임을 알립니다.
+취약 웹 사이트는 각 포트로 직접 접속하세요 (VM IP 기준).</p>
+
+<h2>취약 웹 애플리케이션</h2>
+<div class="grid">
+  <a class="card" href="http://localhost:3000">Juice Shop <span class="muted">:3000</span></a>
+  <a class="card" href="http://localhost:8080">DVWA <span class="muted">:8080</span></a>
+  <a class="card" href="http://localhost:3001">NeoBank <span class="muted">:3001</span></a>
+  <a class="card" href="http://localhost:3002">GovPortal <span class="muted">:3002</span></a>
+  <a class="card" href="http://localhost:3003">MediForum <span class="muted">:3003</span></a>
+  <a class="card" href="http://localhost:3004">AdminConsole <span class="muted">:3004</span></a>
+  <a class="card" href="http://localhost:3005">AICompanion <span class="muted">:3005</span></a>
+</div>
+
+<h2>SOC / SIEM</h2>
+<div class="grid">
+  <a class="card" href="https://localhost:1443">Wazuh Dashboard <span class="muted">:1443 (https)</span></a>
+  <a class="card" href="http://localhost:8003/health">Bastion API <span class="muted">:8003</span></a>
+</div>
+
+<h2>SSH 접속 (Windows → VM)</h2>
+<pre><code>ssh ccc@&lt;VM_IP&gt; -p 2201   # secu
+ssh ccc@&lt;VM_IP&gt; -p 2202   # web
+ssh ccc@&lt;VM_IP&gt; -p 2203   # siem
+ssh ccc@&lt;VM_IP&gt; -p 2204   # bastion
+ssh ccc@&lt;VM_IP&gt; -p 2205   # attacker
+</code></pre>
+<p class="muted">기본 암호는 .env의 <code>CCC_SSH_PASS</code> (기본값 ccc).</p>
+</body></html>

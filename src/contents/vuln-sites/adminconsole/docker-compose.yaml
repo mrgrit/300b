@@ -1,0 +1,13 @@
+services:
+  adminconsole:
+    build: .
+    image: adminconsole:vulnerable
+    container_name: adminconsole
+    ports:
+      - "3004:3004"
+    restart: unless-stopped
+    networks:
+      - 300b-vuln
+networks:
+  300b-vuln:
+    external: true

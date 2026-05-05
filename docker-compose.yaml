@@ -1,0 +1,302 @@
+# =========================================================
+# 300B 실습 환경 — 학생 1인용 단일 VM 통합 compose
+# =========================================================
+# 컨테이너 구성 (총 14개):
+#   코어 5  : 300b-secu / 300b-web / 300b-siem / 300b-bastion / 300b-attacker
+#   Wazuh 3 : wazuh-manager / wazuh-indexer / wazuh-dashboard
+#   취약 6  : juiceshop / dvwa / neobank / govportal / mediforum /
+#            adminconsole / aicompanion  (실제로는 7 — vuln 5 + juice + dvwa)
+#
+# 네트워크 2개:
+#   300b-edu  — 공방전 트래픽 (attacker ↔ web/vuln-sites)
+#   300b-mgmt — 관리·로그 트래픽 (bastion ↔ 모든 코어, siem ↔ wazuh)
+#
+# 모든 코어 컨테이너는 host port (.env 정의) 로 SSH 노출.
+# ---------------------------------------------------------
+
+x-common: &common-restart
+  restart: unless-stopped
+
+services:
+
+  # ========== 코어 ==========
+  300b-secu:
+    build:
+      context: .
+      dockerfile: secu/Dockerfile
+    image: 300b/secu:standalone
+    container_name: 300b-secu
+    hostname: 300b-secu
+    cap_add: [NET_ADMIN, NET_RAW]
+    sysctls:
+      net.ipv4.ip_forward: 1
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+    networks: [300b-edu, 300b-mgmt]
+    ports:
+      - "${SSH_PORT_SECU:-2201}:22"
+    <<: *common-restart
+
+  300b-web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: 300b/web:standalone
+    container_name: 300b-web
+    hostname: 300b-web
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+    networks: [300b-edu, 300b-mgmt]
+    ports:
+      - "${SSH_PORT_WEB:-2202}:22"
+      - "${PORT_WEB_LANDING:-80}:80"
+    <<: *common-restart
+
+  300b-siem:
+    build:
+      context: .
+      dockerfile: siem/Dockerfile
+    image: 300b/siem:standalone
+    container_name: 300b-siem
+    hostname: 300b-siem
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+      LLM_SUBAGENT_MODEL: ${LLM_SUBAGENT_MODEL:-gemma3:4b}
+      LLM_MANAGER_MODEL: ${LLM_MANAGER_MODEL:-gpt-oss:120b}
+    volumes:
+      - 300b-cti-data:/opt/app/contents/threats
+    networks: [300b-edu, 300b-mgmt]
+    ports:
+      - "${SSH_PORT_SIEM:-2203}:22"
+    <<: *common-restart
+
+  300b-bastion:
+    build:
+      context: .
+      dockerfile: bastion/Dockerfile
+    image: 300b/bastion:standalone
+    container_name: 300b-bastion
+    hostname: 300b-bastion
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+      LLM_MANAGER_MODEL: ${LLM_MANAGER_MODEL:-gpt-oss:120b}
+      LLM_SUBAGENT_MODEL: ${LLM_SUBAGENT_MODEL:-gemma3:4b}
+      API_KEY: ${API_KEY:-300b-api-key-2026}
+      JWT_SECRET: ${JWT_SECRET:-300b-jwt-secret-2026}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - 300b-bastion-data:/opt/app/data
+      - 300b-bastion-playbooks:/opt/app/contents/playbooks
+    networks: [300b-mgmt]
+    ports:
+      - "${SSH_PORT_BASTION:-2204}:22"
+      - "${PORT_BASTION_API:-8003}:8003"
+    <<: *common-restart
+
+  300b-attacker:
+    build:
+      context: .
+      dockerfile: attacker/Dockerfile
+    image: 300b/attacker:standalone
+    container_name: 300b-attacker
+    hostname: 300b-attacker
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+    networks: [300b-edu, 300b-mgmt]
+    ports:
+      - "${SSH_PORT_ATTACKER:-2205}:22"
+    <<: *common-restart
+
+  # ========== Wazuh single-node (공식 4.10 — wazuh-docker repo 패턴) ==========
+  # 첫 기동 전 ./wazuh-certs/certs 에 SSL 인증서 생성 필요 (300b.sh 자동 처리).
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.10.0
+    container_name: wazuh-indexer
+    hostname: wazuh.indexer
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./wazuh-certs/certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem
+      - ./wazuh-certs/certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer-key.pem
+      - ./wazuh-certs/certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.pem
+      - ./wazuh-certs/certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem
+      - ./wazuh-certs/certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem
+      - ./wazuh-certs/wazuh_indexer.yml:/usr/share/wazuh-indexer/opensearch.yml.disabled
+    networks:
+      300b-mgmt:
+        aliases: [wazuh.indexer]
+    <<: *common-restart
+
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.10.0
+    container_name: wazuh-manager
+    hostname: wazuh.manager
+    depends_on: [wazuh-indexer]
+    environment:
+      INDEXER_URL: https://wazuh.indexer:9200
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: SecretPassword
+      FILEBEAT_SSL_VERIFICATION_MODE: full
+      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem
+      SSL_CERTIFICATE: /etc/ssl/filebeat.pem
+      SSL_KEY: /etc/ssl/filebeat.key
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: MyS3cr37P450r.*-
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 655360, hard: 655360 }
+    volumes:
+      - wazuh-manager-etc:/var/ossec/etc
+      - wazuh-manager-logs:/var/ossec/logs
+      - wazuh-manager-queue:/var/ossec/queue
+      - wazuh-manager-var:/var/ossec/var
+      - ./wazuh-certs/certs/root-ca-manager.pem:/etc/ssl/root-ca.pem
+      - ./wazuh-certs/certs/wazuh.manager.pem:/etc/ssl/filebeat.pem
+      - ./wazuh-certs/certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key
+    networks:
+      300b-edu:
+        aliases: [wazuh.manager]
+      300b-mgmt:
+        aliases: [wazuh.manager]
+    ports:
+      - "1514:1514"
+      - "1515:1515"
+      - "514:514/udp"
+      - "55000:55000"
+    <<: *common-restart
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.10.0
+    container_name: wazuh-dashboard
+    hostname: wazuh.dashboard
+    depends_on: [wazuh-indexer, wazuh-manager]
+    environment:
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: SecretPassword
+      WAZUH_API_URL: https://wazuh.manager
+      DASHBOARD_USERNAME: kibanaserver
+      DASHBOARD_PASSWORD: kibanaserver
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: MyS3cr37P450r.*-
+    volumes:
+      - ./wazuh-certs/certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh.dashboard.pem
+      - ./wazuh-certs/certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh.dashboard-key.pem
+      - ./wazuh-certs/certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem
+      - ./wazuh-certs/wazuh_dashboard.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+    networks:
+      300b-mgmt:
+        aliases: [wazuh.dashboard]
+    ports:
+      - "${PORT_WAZUH_DASHBOARD:-1443}:5601"
+    <<: *common-restart
+
+  # ========== 취약 웹 (별도 서비스 — vuln-sites 폴더 컨텍스트 빌드) ==========
+  juiceshop:
+    image: bkimminich/juice-shop:latest
+    container_name: juiceshop
+    hostname: juiceshop
+    networks: [300b-edu]
+    ports:
+      - "${PORT_JUICESHOP:-3000}:3000"
+    <<: *common-restart
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: dvwa
+    hostname: dvwa
+    networks: [300b-edu]
+    ports:
+      - "${PORT_DVWA:-8080}:80"
+    <<: *common-restart
+
+  neobank:
+    build: src/contents/vuln-sites/neobank
+    image: neobank:vulnerable
+    container_name: neobank
+    hostname: neobank
+    networks: [300b-edu]
+    ports:
+      - "${PORT_NEOBANK:-3001}:3001"
+    <<: *common-restart
+
+  govportal:
+    build: src/contents/vuln-sites/govportal
+    image: govportal:vulnerable
+    container_name: govportal
+    hostname: govportal
+    networks: [300b-edu]
+    ports:
+      - "${PORT_GOVPORTAL:-3002}:3002"
+    <<: *common-restart
+
+  mediforum:
+    build: src/contents/vuln-sites/mediforum
+    image: mediforum:vulnerable
+    container_name: mediforum
+    hostname: mediforum
+    networks: [300b-edu]
+    ports:
+      - "${PORT_MEDIFORUM:-3003}:3003"
+    <<: *common-restart
+
+  adminconsole:
+    build: src/contents/vuln-sites/adminconsole
+    image: adminconsole:vulnerable
+    container_name: adminconsole
+    hostname: adminconsole
+    networks: [300b-edu]
+    ports:
+      - "${PORT_ADMINCONSOLE:-3004}:3004"
+    <<: *common-restart
+
+  aicompanion:
+    build: src/contents/vuln-sites/aicompanion
+    image: aicompanion:vulnerable
+    container_name: aicompanion
+    hostname: aicompanion
+    environment:
+      LLM_BACKEND: ${AICOMPANION_LLM_BACKEND:-mock}
+      OLLAMA_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${LLM_SUBAGENT_MODEL:-gemma3:4b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [300b-edu]
+    ports:
+      - "${PORT_AICOMPANION:-3005}:3005"
+    <<: *common-restart
+
+networks:
+  300b-edu:
+    name: 300b-edu
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.30.0/24
+  300b-mgmt:
+    name: 300b-mgmt
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.40.0/24
+
+volumes:
+  wazuh-indexer-data:
+  wazuh-manager-etc:
+  wazuh-manager-logs:
+  wazuh-manager-queue:
+  wazuh-manager-var:
+  300b-bastion-data:
+  300b-bastion-playbooks:
+  300b-cti-data:
