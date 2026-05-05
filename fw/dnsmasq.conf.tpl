@@ -2,8 +2,9 @@
 # AWS Route 53 private hosted zone 시뮬레이션. 학생 PC 의 DNS 서버를 VM IP 로 지정하면
 # 별도 /etc/hosts 편집 없이 juice.300b.lab 등 사용 가능.
 
-# wildcard A record — 학생이 다양한 sub-host 만들어도 fw 로 자동 해석.
-address=/.300b.lab/${HOST_IP}
+# wildcard A record — 300b.lab 자체 + 모든 sub-domain 을 fw 의 host_ip 로 응답.
+# dnsmasq 문법: 도메인 앞에 점(.) 붙이지 말 것 — 그래야 sub-domain wildcard 동작.
+address=/300b.lab/${HOST_IP}
 
 # 로컬 docker DNS 로 fallback (컨테이너 이름 해석 — 다른 컨테이너 이름 질의 대응)
 server=127.0.0.11
