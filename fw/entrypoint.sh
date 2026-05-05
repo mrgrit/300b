@@ -50,20 +50,28 @@ else
     socat TCP-LISTEN:443,reuseaddr,fork TCP:${WAF_DMZ_IP}:443 >/var/log/socat-443.log 2>&1 &
 fi
 
-# dnsmasq — Phase D 에서 활성화. fw 의 host_ip (eth0 — edge 측) 로 *.300b 응답.
-HOST_IP="$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)"
+# Phase D: dnsmasq — *.300b.lab 을 학생 PC 가 도달 가능한 VM 외부 IP 로 응답.
+# HOST_IP 환경변수가 명시된 경우 그것을 사용 (compose 가 .env 의 VM_IP 전달).
+# 없으면 docker host-gateway 를 fallback 으로 (host.docker.internal).
+if [ -z "${HOST_IP:-}" ]; then
+    HOST_IP="$(getent ahosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')"
+fi
+if [ -z "${HOST_IP:-}" ]; then
+    HOST_IP="$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)"
+fi
+echo "[fw] HOST_IP for DNS reply = ${HOST_IP}"
+
 if [ -n "${HOST_IP:-}" ]; then
     export HOST_IP
     envsubst '${HOST_IP}' < /etc/dnsmasq.d/300b.conf.tpl > /etc/dnsmasq.d/300b.conf
-    # /etc/resolv.conf 의 nameserver 가 dnsmasq 자신을 가리키지 않도록 — 무한 loop 방지.
     rm -f /etc/dnsmasq.d/300b.conf.tpl
-    if ${ENABLE_DNSMASQ:-false} ; then
-        # systemd default service 비활성 (이미 docker 라 의미 없지만 깔끔)
+    if [ "${ENABLE_DNSMASQ:-false}" = "true" ]; then
         rm -f /etc/dnsmasq.conf 2>/dev/null || true
         dnsmasq --conf-dir=/etc/dnsmasq.d --keep-in-foreground &
-        echo "[fw] dnsmasq 기동 (background) — *.300b → ${HOST_IP}"
+        echo "[fw] dnsmasq 기동 — *.300b.lab → ${HOST_IP}"
+        # nftables 에 DNS 53/udp,tcp INPUT 허용 룰 추가 (input chain default accept 라 OK)
     else
-        echo "[fw] dnsmasq 비활성 (ENABLE_DNSMASQ=false). Phase D 에서 활성화 예정."
+        echo "[fw] dnsmasq 비활성 (ENABLE_DNSMASQ=false)."
     fi
 fi
 

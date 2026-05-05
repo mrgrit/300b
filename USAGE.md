@@ -23,27 +23,56 @@
 
 ## 1. 환경 개요
 
-300B 는 학생 PC 한 대에 **VMware VM 1개** 를 만들고, 그 안에 **Docker 컨테이너 14개**
-를 띄워서 사이버보안 실습을 위한 모든 인프라를 한 번에 구성합니다.
+300B 는 학생 PC 한 대에 **VMware VM 1개** 를 만들고, 그 안에 **Docker 컨테이너 17개**
+를 띄워 **AWS-style 4-tier 보안 아키텍처**를 흉내냅니다.
 
 ```
 [학생 Windows PC]
         │
-        ├─ ssh / 브라우저
+        ├─ 브라우저 (HTTP 80, HTTPS 443) / SSH (port 2204)
         ▼
 [Ubuntu 22.04 VM (Bridge IP)]
         │
-        ├─ Docker network: 300b-edu (172.30.30.0/24)   공방전 트래픽
-        └─ Docker network: 300b-mgmt (172.30.40.0/24)  관리·로그
-              │
-              ├─ 코어 5: secu / web / siem / bastion / attacker
-              ├─ Wazuh 3: indexer / manager / dashboard
-              └─ 취약 7: juiceshop / dvwa / neobank / govportal /
-                          mediforum / adminconsole / aicompanion
+        │   외부 노출 호스트 포트 단 4개:
+        │     80, 443  → 300b-fw (Edge)
+        │     53       → 300b-fw dnsmasq (DNS)
+        │     2204     → 300b-bastion (SSH 점프 호스트)
+        │
+        ├─ 300b-edge   (172.30.10/24) → 300b-fw 만
+        ├─ 300b-dmz    (172.30.20/24) → fw, waf, ids
+        ├─ 300b-private(172.30.30/24, internal:true) → 7 vuln backends
+        └─ 300b-mgmt   (172.30.40/24)
+              ├─ 300b-bastion       (jumphost + KG API)
+              ├─ 300b-secu/siem/attacker  (운영·공격자)
+              └─ wazuh-indexer/manager/dashboard
 ```
 
-학생이 다루는 것은 **이 VM 하나** 뿐. 중앙 서버 의존 없음.
-LLM(Ollama) 만 외부 학교 GPU 서버를 사용합니다 (.env 의 `LLM_BASE_URL`).
+### 트래픽 흐름
+
+```
+학생 → :80,443 → fw(nftables+socat) → waf(ModSec, 9 vhost) → backend
+                       ↓ sniff
+                    300b-ids (Suricata IDS, eve.json → wazuh)
+
+학생 SSH → :2204 → bastion → ProxyJump → 다른 컨테이너
+```
+
+### AWS 매핑
+
+| AWS 컴포넌트 | 300B 컨테이너 |
+|------------|--------------|
+| Internet Gateway | host port mapping |
+| Network Firewall | 300b-fw (nftables) |
+| ALB + AWS WAF | 300b-waf (Apache + ModSec + CRS) |
+| GuardDuty / VPC Flow | 300b-ids (Suricata) |
+| Bastion Host | 300b-bastion |
+| Route 53 (private) | dnsmasq on 300b-fw |
+| ACM (private CA) | self-signed CA on 300b-waf |
+| Public/DMZ/Private/Mgmt subnets | 300b-edge/dmz/private/mgmt docker bridges |
+| CloudWatch / Security Hub | Wazuh manager + dashboard |
+
+LLM(Ollama) 만 외부 학교 GPU 서버 사용 (.env 의 `LLM_BASE_URL`). private 망의 vuln 사이트는
+**internal: true** 로 외부 도달 불가 — 침해 시 C2/exfil 자동 차단.
 
 ---
 
@@ -121,6 +150,40 @@ ip a | grep inet
 
 → 예: `192.168.0.45/24` 형식. 이걸 `<VM_IP>` 로 사용합니다.
 
+### 3-5. 학생 PC 가 `*.300b.lab` 도메인을 VM IP 로 해석하게 설정
+
+300B 의 모든 웹 사이트가 `<service>.300b.lab` 도메인으로 제공됩니다. 학생 PC 가 이 도메인을 VM IP 로 해석할 수 있어야 합니다. **둘 중 하나만 선택**:
+
+#### 방법 A: DNS 서버 변경 (한 번 설정, 자동 해석) ⭐ 권장
+
+300B 의 fw 컨테이너가 `<VM_IP>:53` 에서 dnsmasq 를 띄우고 `*.300b.lab` 을 VM_IP 로 응답합니다.
+
+**Windows 10/11**:
+1. 시작 → "네트워크 연결 설정 보기" → 사용 중인 어댑터 클릭 → 속성
+2. "Internet Protocol Version 4 (TCP/IPv4)" 더블클릭
+3. "다음 DNS 서버 사용" 선택:
+   - 기본 DNS: `<VM_IP>` (예: 192.168.0.45)
+   - 보조 DNS: `8.8.8.8` (300B 가 안 떠있을 때 대비)
+4. 확인 → 명령 프롬프트에서 `ipconfig /flushdns` → 끝
+
+#### 방법 B: hosts 파일 수동 추가 (DNS 권한 없을 때)
+
+**Windows**: 메모장을 **관리자 권한**으로 열고 `C:\Windows\System32\drivers\etc\hosts` 편집, 끝에 추가:
+
+```
+<VM_IP>  juice.300b.lab dvwa.300b.lab neobank.300b.lab govportal.300b.lab mediforum.300b.lab admin.300b.lab ai.300b.lab wazuh.300b.lab bastion.300b.lab 300b.lab
+```
+(실제로는 `<VM_IP>` 자리에 본인 VM IP 입력. 한 줄로)
+
+**Linux/macOS**: `sudo vim /etc/hosts` 같은 형식으로 추가.
+
+#### 검증
+
+```powershell
+nslookup juice.300b.lab     # 응답이 VM_IP 면 OK
+ping juice.300b.lab          # VM_IP 로 ping 가야 OK
+```
+
 ---
 
 ## 4. 300B 설치
@@ -194,33 +257,51 @@ bash 300b.sh smoke
 
 > ⚠️ **데모용 default 비밀번호입니다.** 실습실 외부에서 접속 가능한 환경이면 반드시 변경하세요. 변경 방법은 [§10](#10-비밀번호키-변경) 참조.
 
-### 5-1. SSH (컨테이너 5개)
+### 5-1. SSH (Bastion ProxyJump 모델)
 
-| 컨테이너 | 호스트 포트 | 계정 | 암호 | sudo |
-|---------|-----------|------|------|------|
-| 300b-secu | 2201 | `ccc` | `ccc` | NOPASSWD ✅ |
-| 300b-web | 2202 | `ccc` | `ccc` | NOPASSWD ✅ |
-| 300b-siem | 2203 | `ccc` | `ccc` | NOPASSWD ✅ |
-| 300b-bastion | 2204 | `ccc` | `ccc` | NOPASSWD ✅ |
-| 300b-attacker | 2205 | `ccc` | `ccc` | NOPASSWD ✅ |
+**Bastion (port 2204) 만 외부 노출.** 다른 모든 컨테이너 SSH 는 bastion 경유.
 
-추가로 모든 컨테이너에 `root` / `ccc` 가 활성화되어 있습니다 (sudo 막힐 때 비상용).
+| 컨테이너 | 접속 방법 | 계정 | 암호 | sudo |
+|---------|----------|------|------|------|
+| **300b-bastion** | `ssh ccc@<VM_IP> -p 2204` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-fw | `ssh -J ccc@<VM_IP>:2204 ccc@300b-fw` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-waf | `ssh -J ccc@<VM_IP>:2204 ccc@300b-waf` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-secu | `ssh -J ccc@<VM_IP>:2204 ccc@300b-secu` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-siem | `ssh -J ccc@<VM_IP>:2204 ccc@300b-siem` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-attacker | `ssh -J ccc@<VM_IP>:2204 ccc@300b-attacker` | `ccc` | `ccc` | NOPASSWD ✅ |
+| 300b-ids | `ssh -J ccc@<VM_IP>:2204 ccc@300b-ids` | `ccc` | `ccc` | NOPASSWD ✅ |
+
+학생 PC `~/.ssh/config` 에 한 번만 추가하면 위 명령들이 더 짧아짐:
+```ssh-config
+Host 300b-bastion
+  HostName <VM_IP>
+  Port 2204
+  User ccc
+
+Host 300b-*
+  ProxyJump 300b-bastion
+  User ccc
+```
+그 후: `ssh 300b-attacker`, `ssh 300b-waf` 등 한 줄.
+
+추가로 모든 컨테이너에 `root` / `ccc` 도 활성화 (sudo 막힐 때 비상용).
 
 ### 5-2. SIEM / 보안 콘솔
 
 | 서비스 | URL | 계정 | 암호 | 비고 |
 |--------|-----|------|------|------|
-| **Wazuh Dashboard** | `https://<VM_IP>:1443` | `admin` | `SecretPassword` | 자체 서명 인증서 → 브라우저 경고 무시 |
-| Wazuh Manager API | 내부 `:55000` | `wazuh-wui` | `MyS3cr37P450r.*-` | 컨테이너 내부에서만 호출 |
-| Wazuh Indexer | 내부 `:9200` | `admin` | `SecretPassword` | OpenSearch REST API |
+| **Wazuh Dashboard** | `http://wazuh.300b.lab/` 또는 `https://wazuh.300b.lab/` | `admin` | `SecretPassword` | waf 의 wazuh.300b.lab vhost 통해 자동 reverse proxy |
+| Wazuh Manager API | 내부 `:55000` (mgmt 망) | `wazuh-wui` | `MyS3cr37P450r.*-` | bastion 통해서만 도달 |
+| Wazuh Indexer | 내부 `:9200` (mgmt 망) | `admin` | `SecretPassword` | OpenSearch REST API |
 
-브라우저 처음 접속 시 SSL 경고가 나옵니다 → `Advanced` → `Proceed to ...` 클릭.
+> Wazuh dashboard 가 직접 외부 노출되지 않으므로 학생 PC `/etc/hosts` 또는 DNS 가 `wazuh.300b.lab → VM_IP` 해석되어야 합니다 (§3 참조).
 
 ### 5-3. Bastion API (운영 보조 에이전트)
 
 | 항목 | 값 |
 |------|-----|
-| URL | `http://<VM_IP>:8003` |
+| URL (직접) | `http://<VM_IP>:8003` |
+| URL (waf 경유) | `http://bastion.300b.lab/` 또는 `https://bastion.300b.lab/` |
 | 인증 헤더 | `X-API-Key: 300b-api-key-2026` |
 | 헬스체크 | `GET /health` (인증 불필요) |
 | 채팅 | `POST /chat` (NDJSON 스트림) |
@@ -228,25 +309,28 @@ bash 300b.sh smoke
 | Playbook 목록 | `GET /playbooks` |
 | KG 헬스 | `GET /kg/health` |
 
-예:
 ```bash
-curl http://<VM_IP>:8003/health
-curl -H "X-API-Key: 300b-api-key-2026" http://<VM_IP>:8003/skills
+curl http://bastion.300b.lab/health
+curl -H "X-API-Key: 300b-api-key-2026" http://bastion.300b.lab/skills
 ```
 
-### 5-4. 취약 웹 (공격 대상)
+### 5-4. 취약 웹 (공격 대상) — 모두 waf 경유 도메인 접속
 
-학생이 공격을 연습하는 대상입니다 — 의도적으로 취약합니다.
+직접 포트 노출 ❌. ModSecurity 가 모든 요청 검사합니다.
 
 | 사이트 | URL | 기본 로그인 / 노트 |
 |--------|-----|------------------|
-| **DVWA** | `http://<VM_IP>:8080` | `admin` / `password` (첫 접속 시 `Create / Reset Database` 클릭) |
-| **Juice Shop** | `http://<VM_IP>:3000` | 회원가입형. admin 은 SQLi 또는 CTF 챌린지로 획득 |
-| **NeoBank** | `http://<VM_IP>:3001` | 시드 사용자 인덱스/`/api/users` 에서 확인. 30 취약점 |
-| **GovPortal** | `http://<VM_IP>:3002` | 시드 사용자 페이지 내 안내. 25 취약점 |
-| **MediForum** | `http://<VM_IP>:3003` | `/api/users` PII 노출 V07 챌린지. 22 취약점 |
-| **AdminConsole** | `http://<VM_IP>:3004` | `admin` / `admin` (V14 default cred 자체가 취약점). 28 취약점 |
-| **AICompanion** | `http://<VM_IP>:3005` | LLM 챗봇. prompt injection / system prompt leak. 25 취약점 |
+| **DVWA** | `http://dvwa.300b.lab/` | `admin` / `password` (첫 접속 시 `Create / Reset Database` 클릭) |
+| **Juice Shop** | `http://juice.300b.lab/` | 회원가입형. admin 은 SQLi 또는 CTF 챌린지로 획득 |
+| **NeoBank** | `http://neobank.300b.lab/` | 시드 사용자 인덱스/`/api/users` 에서 확인. 30 취약점 |
+| **GovPortal** | `http://govportal.300b.lab/` | 시드 사용자 페이지 내 안내. 25 취약점 |
+| **MediForum** | `http://mediforum.300b.lab/` | `/api/users` PII 노출 V07 챌린지. 22 취약점 |
+| **AdminConsole** | `http://admin.300b.lab/` | `admin` / `admin` (V14 default cred 자체가 취약점). 28 취약점 |
+| **AICompanion** | `http://ai.300b.lab/` | LLM 챗봇. prompt injection / system prompt leak. 25 취약점 |
+
+**HTTPS 도 모두 사용 가능**: `https://juice.300b.lab/` 등. 자체 서명 CA 라 첫 접속 시 브라우저 경고 → 학생이 `http://<VM_IP>/300b-ca.crt` 에서 root CA 다운로드 후 PC 에 import 하면 경고 사라짐.
+
+> ModSecurity 룰을 끄거나 약화시켜 raw 공격 결과 비교 학습 가능 — 학생이 `ssh 300b-waf` 로 진입 후 `/etc/modsecurity/modsecurity.conf` 의 `SecRuleEngine` 을 `Off/DetectionOnly/On` 토글하며 학습.
 
 > 시드 사용자 / API 토큰 등 세부 정보는 각 사이트의 `/health` 또는 `/_health` 엔드포인트, 그리고 인덱스 페이지에 의도적으로 노출됩니다 — 학생이 발견해야 하는 취약점입니다.
 

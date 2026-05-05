@@ -58,7 +58,7 @@ RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh \
     && ln -sf /usr/local/bin/journalctl3.py /usr/local/bin/journalctl
 
 # 10 개 vhost 활성 (landing + 9 backend). HTTP 만 — TLS 는 Phase C 에서 cert 생성 후 활성.
-RUN for h in landing juice dvwa neobank govportal mediforum admin ai wazuh bastion; do \
+RUN for h in 00-landing juice dvwa neobank govportal mediforum admin ai wazuh bastion; do \
         a2ensite "${h}.conf" 2>/dev/null || true ; \
     done
 

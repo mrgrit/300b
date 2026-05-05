@@ -50,6 +50,9 @@ services:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
       ENABLE_DNSMASQ: ${ENABLE_DNSMASQ:-false}      # Phase D 에서 true
+      HOST_IP: ${VM_IP:-}                            # dnsmasq 가 응답할 VM 외부 IP (300b.sh 자동 주입)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"          # HOST_IP 미지정 시 fallback
     networks:
       300b-edge:
         ipv4_address: 172.30.10.10
@@ -60,6 +63,10 @@ services:
     ports:
       - "${PORT_HTTP:-80}:80"
       - "${PORT_HTTPS:-443}:443"
+      # DNS 53 은 VM 외부 IP 에만 bind — systemd-resolved 의 127.0.0.53 과 충돌 회피.
+      # VM_IP 가 .env 에 비어 있으면 (init 전) docker 가 fail. 300b.sh ensure_env 가 자동 설정.
+      - "${VM_IP:-127.0.0.1}:53:53/udp"
+      - "${VM_IP:-127.0.0.1}:53:53/tcp"
     depends_on:
       - 300b-waf
     <<: *common-restart
@@ -348,7 +355,7 @@ networks:
   300b-private:
     name: 300b-private
     driver: bridge
-    # Phase B 에서 internal: true 로 변경 — 그 전엔 vuln 사이트 outbound 가능.
+    internal: true   # Phase B: outbound NAT 없음 — vuln 사이트 침해 후 외부 C2/exfil 차단.
     ipam:
       config:
         - subnet: 172.30.30.0/24
