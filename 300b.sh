@@ -73,16 +73,24 @@ ensure_vmax_map_count() {
 
 ensure_wazuh_certs() {
     # Wazuh single-node 4.10 — 첫 1회 SSL cert 생성. 결과는 wazuh-certs/certs/ 에 저장.
-    # cert generator 가 일부 파일을 root:docker (uid 999) 로 만들고 0400 권한을 거니
-    # 컨테이너 안에서 못 읽음 — 1회용 alpine 으로 chmod a+r 처리 (sudo 회피).
-    if [ -f "$HERE/wazuh-certs/certs/root-ca.pem" ] \
-       && [ -r "$HERE/wazuh-certs/certs/wazuh.indexer-key.pem" ]; then return; fi
-    if [ ! -f "$HERE/wazuh-certs/certs/root-ca.pem" ]; then
-        log "Wazuh SSL 인증서 1회 생성 (wazuh-certs-generator)"
+    # docker compose 가 host path 가 없을 때 빈 디렉토리로 자동 mount 하는 함정 회피용으로
+    # 핵심 파일 9개를 모두 검증한다.
+    local missing=0
+    for f in root-ca.pem root-ca.key root-ca-manager.pem admin.pem admin-key.pem \
+             wazuh.indexer.pem wazuh.indexer-key.pem \
+             wazuh.manager.pem wazuh.manager-key.pem \
+             wazuh.dashboard.pem wazuh.dashboard-key.pem; do
+        [ ! -f "$HERE/wazuh-certs/certs/$f" ] && missing=1
+    done
+    if [ "$missing" = "1" ]; then
+        log "Wazuh SSL 인증서 생성 (wazuh-certs-generator)"
+        # docker 가 자동 생성한 빈 디렉토리들이 있으면 정리 후 재생성.
+        find "$HERE/wazuh-certs/certs" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
         ( cd "$HERE/wazuh-certs" && docker compose -f generate.yaml run --rm generator )
     fi
-    log "Wazuh cert 권한 정리 (alpine chmod)"
-    docker run --rm -v "$HERE/wazuh-certs/certs:/c" alpine sh -c 'chmod 755 /c && chmod 644 /c/*'
+    # cert generator 가 일부 파일을 root:docker 0400 으로 만드므로 alpine 으로 권한 정리.
+    log "Wazuh cert 권한 정리"
+    docker run --rm -v "$HERE/wazuh-certs/certs:/c" alpine sh -c 'chmod 755 /c && chmod 644 /c/*' >/dev/null
 }
 
 cmd_up() {

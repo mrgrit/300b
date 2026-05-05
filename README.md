@@ -2,10 +2,21 @@
 
 중앙 서버 없이 학생 PC 의 VMware VM 1대 안에 모든 인프라를 Docker 컨테이너로 띄우는 버전.
 
+## VM 권장 사양
+
+| 등급 | CPU | RAM | Disk | 비고 |
+|------|-----|-----|------|------|
+| **최소** | 2 vCPU | 6 GB | 40 GB | Wazuh 제외 (코어 5 + 취약 7) |
+| **권장** | 4 vCPU | 12 GB | 60 GB | 풀 스택 (Wazuh + msf 포함) |
+| **안전** | 6 vCPU | 16 GB | 80 GB | 풀 스택 + 동시 실습 여유 |
+
+> 학생 호스트 PC RAM이 8 GB 이하면 VM 6 GB + `bash 300b.sh up-lite` (Wazuh 제외) 권장.
+> msf 빼면 (`BUILD_MSF=0`) 디스크 −3 GB.
+
 ## 빠른 시작 (학생용)
 
-1. Ubuntu 22.04 server VM 1대 준비 (VMware Bridge 네트워크 1개 — 학생 PC LAN 과 같은 대역)
-2. CPU 4 vCPU 이상, **RAM 12 GB 이상** 권장 (Wazuh indexer 가 메모리 큼), Disk 60 GB
+1. Ubuntu 22.04 server VM 1대 준비 (VMware **Bridge 네트워크 1개** — 학생 PC LAN 과 같은 대역)
+2. 위 권장 사양에 맞춰 CPU/RAM/Disk 할당
 3. VM 안에서:
    ```bash
    git clone https://github.com/mrgrit/300b
@@ -69,7 +80,7 @@ bash 300b.sh destroy   # 컨테이너+볼륨+이미지 삭제 (--reset)
 - siem 컨테이너의 cti-collector 는 매일 04:30 cron 으로 NVD CVE 수집 → `300b-cti-data` 볼륨에 저장.
 - bastion KG / evidence DB 는 `300b-bastion-data` 볼륨에 영속. 학생이 직접 만져도 destroy 시 삭제.
 
-## 검증 상태 (2026-05-05 기준, 이 서버에서 빌드/기동 테스트)
+## 검증 상태 (테스트 환경 빌드·기동 결과)
 
 | 서비스 | 상태 | 비고 |
 |--------|------|------|
@@ -77,7 +88,10 @@ bash 300b.sh destroy   # 컨테이너+볼륨+이미지 삭제 (--reset)
 | 5 자체 vuln-sites + JuiceShop + DVWA | ✅ pass | HTTP 200/302 |
 | 300b-bastion API /health | ✅ pass | KG 4모듈 loaded, 33 skills, sqlite DB 자동 생성 |
 | siem cti-collector cron | ✅ pass | /etc/cron.d/300b-cti 등록됨 |
-| **Wazuh single-node 3 services** | ⚠️ **첫 부팅 plugin 로드 이슈** | indexer 의 OpenSearchSecurityPlugin 첫 부팅 실패. 권한·SSL config 추가 디버그 필요 — v2 단계 |
+| Wazuh single-node 3 services | ✅ pass | indexer cluster green, dashboard https HTTP 302 |
 
-Wazuh 가 안정화되기 전까지는 syslog 수집을 300b-siem 컨테이너의 rsyslog (`514/udp`, `5514/tcp`)
-로 모아 `/var/log/syslog` 에서 직접 확인 가능.
+**종합: 15/15 통과**.
+
+Wazuh 첫 로그인 정보:
+- URL: `https://<VM_IP>:1443`
+- 계정: `admin` / `SecretPassword` (학생용 default — 운영 전환 시 변경 권장)

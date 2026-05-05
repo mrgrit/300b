@@ -129,11 +129,12 @@ services:
     volumes:
       - wazuh-indexer-data:/var/lib/wazuh-indexer
       - ./wazuh-certs/certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem
-      - ./wazuh-certs/certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer-key.pem
+      - ./wazuh-certs/certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.key
       - ./wazuh-certs/certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/certs/wazuh.indexer.pem
       - ./wazuh-certs/certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem
       - ./wazuh-certs/certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem
-      - ./wazuh-certs/wazuh_indexer.yml:/usr/share/wazuh-indexer/opensearch.yml.disabled
+      - ./wazuh-certs/wazuh_indexer.yml:/usr/share/wazuh-indexer/opensearch.yml
+      - ./wazuh-certs/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml
     networks:
       300b-mgmt:
         aliases: [wazuh.indexer]
@@ -191,10 +192,11 @@ services:
       API_USERNAME: wazuh-wui
       API_PASSWORD: MyS3cr37P450r.*-
     volumes:
-      - ./wazuh-certs/certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh.dashboard.pem
-      - ./wazuh-certs/certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh.dashboard-key.pem
+      - ./wazuh-certs/certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem
+      - ./wazuh-certs/certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem
       - ./wazuh-certs/certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem
-      - ./wazuh-certs/wazuh_dashboard.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
+      - ./wazuh-certs/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml
+      - ./wazuh-certs/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml
     networks:
       300b-mgmt:
         aliases: [wazuh.dashboard]
