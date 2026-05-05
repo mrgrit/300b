@@ -495,10 +495,25 @@ service rsyslog status                 # 동등하게 동작 (entrypoint 도 ser
   bash 300b.sh up
   ```
 
-### Q3. `https://<VM_IP>:1443` 가 안 열림
-- Wazuh 첫 부팅은 약 60~90 초 소요. 잠깐 기다린 후 재시도.
-- 브라우저 SSL 경고는 자체 서명 인증서 → `Advanced` → `Proceed`.
-- VM 방화벽: `sudo ufw status` → 비활성이면 OK. 활성이면 1443 허용.
+### Q3. `https://wazuh.300b.lab/` 등이 안 열림
+- 첫 부팅 약 60~90 초 소요. 잠깐 기다린 후 재시도.
+- HTTPS 자체 서명 경고 → `Advanced` → `Proceed` 또는 `http://<VM_IP>/300b-ca.crt` 다운로드 후 PC 에 import.
+- VM 방화벽: `sudo ufw status` → inactive 면 OK. active 면: `sudo ufw allow 80,443,53/tcp; sudo ufw allow 53/udp`
+
+### Q3b. `juice.300b.lab` 등 도메인이 학생 PC 에서 해석 안 됨
+1. **VM 호스트는 OK 인데 다른 PC 에서만 안 됨**:
+   - `ping <VM_IP>` — 실패면 LAN 분리 (공유기 "Client/AP Isolation" 끄기, 또는 VLAN 확인).
+   - `nslookup juice.300b.lab <VM_IP>` — timeout 이면 53/UDP 차단:
+     - VM 의 ufw: `sudo ufw allow 53/udp; sudo ufw allow 53/tcp`
+     - 일부 가정용 공유기는 LAN 내 비표준 DNS 응답을 가로챕니다 → **옵션 B 의 hosts 파일** 로 우회 (§3-5).
+2. **DNS 서버 설정이 적용 안 됨**: `ipconfig /all | findstr DNS` 로 학생이 지정한 VM_IP 가 보이는지 확인. 안 보이면 다른 어댑터 (Wi-Fi vs 유선, VPN) 에 설정한 것.
+3. **VM 안에서 `dig @<VM_IP> juice.300b.lab` 도 안 됨**:
+   ```bash
+   grep ENABLE_DNSMASQ .env       # =true 여야
+   docker exec 300b-fw pgrep -af dnsmasq    # 프로세스 보여야
+   docker port 300b-fw | grep 53            # <VM_IP>:53 으로 bind 되어야
+   ```
+   `false` 로 떠있으면 `sed -i 's/ENABLE_DNSMASQ=false/ENABLE_DNSMASQ=true/' .env && docker compose up -d --force-recreate 300b-fw`
 
 ### Q4. 포트 충돌 (`port is already allocated`)
 다른 docker 컨테이너 또는 호스트 서비스가 점유 중. 해결:
