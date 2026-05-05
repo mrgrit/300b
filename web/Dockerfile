@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         procps \
         rsyslog \
         cron \
+        python3 \
         tzdata \
     && ln -fs /usr/share/zoneinfo/$TZ /etc/localtime \
     && rm -rf /var/lib/apt/lists/*
@@ -33,7 +34,13 @@ RUN a2enmod security2 headers rewrite proxy proxy_http \
 COPY common/sshd_setup.sh /usr/local/bin/sshd_setup.sh
 COPY web/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY web/landing/ /var/www/html/
-RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh
+# systemctl/journalctl shim — 학생이 실서버처럼 systemctl status apache2 등 사용 가능.
+COPY common/systemctl3.py /usr/local/bin/systemctl3.py
+COPY common/journalctl3.py /usr/local/bin/journalctl3.py
+RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh \
+                /usr/local/bin/systemctl3.py /usr/local/bin/journalctl3.py \
+    && ln -sf /usr/local/bin/systemctl3.py /usr/local/bin/systemctl \
+    && ln -sf /usr/local/bin/journalctl3.py /usr/local/bin/journalctl
 
 EXPOSE 22 80
 CMD ["/usr/local/bin/entrypoint.sh"]

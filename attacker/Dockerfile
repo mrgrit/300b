@@ -77,7 +77,13 @@ RUN pip install --no-cache-dir \
 
 COPY common/sshd_setup.sh /usr/local/bin/sshd_setup.sh
 COPY attacker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh
+# systemctl/journalctl shim — 학생이 실서버처럼 systemctl 사용 가능 (msfdb 등 학습용).
+COPY common/systemctl3.py /usr/local/bin/systemctl3.py
+COPY common/journalctl3.py /usr/local/bin/journalctl3.py
+RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh \
+                /usr/local/bin/systemctl3.py /usr/local/bin/journalctl3.py \
+    && ln -sf /usr/local/bin/systemctl3.py /usr/local/bin/systemctl \
+    && ln -sf /usr/local/bin/journalctl3.py /usr/local/bin/journalctl
 
 EXPOSE 22
 CMD ["/usr/local/bin/entrypoint.sh"]

@@ -378,7 +378,18 @@ docker network inspect 300b-mgmt         # 관리 네트워크
 # ─── 데이터 볼륨 ───
 docker volume ls | grep 300b
 docker volume inspect 300b_300b-bastion-data    # bastion KG DB 위치
+
+# ─── 컨테이너 안에서 (5개 코어 컨테이너 공통) ───
+systemctl status sshd                  # 실서버처럼 사용 가능 (shim 으로 SysV/systemd unit 인식)
+systemctl restart rsyslog
+systemctl list-units --type=service
+journalctl -u suricata -n 50 --no-pager
+service rsyslog status                 # 동등하게 동작 (entrypoint 도 service 로 부팅)
 ```
+
+> 컨테이너에는 systemd 가 PID 1 으로 떠있지 않아, `gdraheim/docker-systemctl-replacement` shim
+> 이 `/usr/local/bin/systemctl` 로 깔려 있습니다. 학습용으로 충분하지만 일부 unit (PID 1 인 sshd 등)
+> 은 inactive 로 표시될 수 있습니다 — 이는 한계지 버그가 아닙니다.
 
 ---
 

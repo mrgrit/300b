@@ -47,7 +47,13 @@ RUN touch /opt/app/__init__.py /opt/app/apps/__init__.py /opt/app/packages/__ini
 
 COPY common/sshd_setup.sh /usr/local/bin/sshd_setup.sh
 COPY bastion/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh
+# systemctl/journalctl shim — 학생이 실서버처럼 systemctl status sshd/cron 등 사용 가능.
+COPY common/systemctl3.py /usr/local/bin/systemctl3.py
+COPY common/journalctl3.py /usr/local/bin/journalctl3.py
+RUN chmod +x /usr/local/bin/sshd_setup.sh /usr/local/bin/entrypoint.sh \
+                /usr/local/bin/systemctl3.py /usr/local/bin/journalctl3.py \
+    && ln -sf /usr/local/bin/systemctl3.py /usr/local/bin/systemctl \
+    && ln -sf /usr/local/bin/journalctl3.py /usr/local/bin/journalctl
 
 WORKDIR /opt/app
 EXPOSE 22 8003
