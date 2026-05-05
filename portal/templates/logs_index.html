@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Logs | 300B Portal{% endblock %}
+{% block heading %}Logs (CloudWatch) — 컨테이너 선택{% endblock %}
+
+{% block content %}
+<div class="bg-white p-4 rounded shadow">
+<p class="text-sm text-slate-600 mb-3">컨테이너를 선택하면 docker logs 의 마지막 200 줄을 5초 간격으로 polling 합니다.</p>
+<div class="grid grid-cols-3 gap-2">
+{% for c in containers %}
+<a href="/logs/{{ c.name }}"
+   class="border rounded px-3 py-2 hover:bg-blue-50 text-sm">
+  <span class="font-mono">{{ c.name }}</span>
+  <span class="ml-2 text-xs {% if c.status == 'running' %}text-green-600{% else %}text-red-600{% endif %}">● {{ c.status }}</span>
+</a>
+{% endfor %}
+</div>
+</div>
+{% endblock %}

@@ -85,6 +85,8 @@ services:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
       ENABLE_TLS: ${ENABLE_TLS:-false}              # Phase C 에서 true
+    volumes:
+      - waf-logs:/var/log/apache2                   # portal 가 read-only 로 마운트
     networks:
       300b-dmz:
         ipv4_address: 172.30.20.20
@@ -109,6 +111,8 @@ services:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
       SURICATA_IFACE: ${SURICATA_IFACE:-eth0}
+    volumes:
+      - ids-logs:/var/log/suricata                  # portal 가 read-only 로 마운트
     networks: [300b-dmz, 300b-mgmt]
     <<: *common-restart
 
@@ -186,6 +190,30 @@ services:
       SSH_USER: ${SSH_USER:-ccc}
       SSH_PASS: ${SSH_PASS:-ccc}
     networks: [300b-mgmt, 300b-private]
+    <<: *common-restart
+
+  # ============================================
+  # Portal — AWS Console 풍 운영 대시보드 (mgmt 망에만)
+  # ============================================
+  300b-portal:
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+    image: 300b/portal:standalone
+    container_name: 300b-portal
+    hostname: 300b-portal
+    environment:
+      SSH_USER: ${SSH_USER:-ccc}
+      SSH_PASS: ${SSH_PASS:-ccc}
+      API_KEY: ${API_KEY:-300b-api-key-2026}
+    volumes:
+      # docker socket 읽기전용 — 컨테이너/네트워크 조회용. 침해 시 권한 상승 위험 ⚠️
+      # (학습 환경 trade-off; production 에서는 별도 RBAC 필요)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # waf, ids 의 로그 디렉토리 마운트 (read-only) — modsec_audit + eve.json 표시
+      - waf-logs:/portal-data/waf-logs:ro
+      - ids-logs:/portal-data/ids-logs:ro
+    networks: [300b-mgmt]
     <<: *common-restart
 
   # ============================================
@@ -375,3 +403,5 @@ volumes:
   300b-bastion-data:
   300b-bastion-playbooks:
   300b-cti-data:
+  waf-logs:
+  ids-logs:

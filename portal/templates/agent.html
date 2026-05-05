@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Bastion Agent | 300B Portal{% endblock %}
+{% block heading %}Bastion AI Agent — Health · Skills{% endblock %}
+
+{% block content %}
+
+<div class="grid grid-cols-2 gap-4">
+  <div class="bg-white p-4 rounded shadow">
+    <h2 class="font-semibold mb-2">Health</h2>
+    <pre class="font-mono text-xs bg-slate-50 p-3 rounded overflow-auto">{{ health|tojson(indent=2) }}</pre>
+  </div>
+
+  <div class="bg-white p-4 rounded shadow">
+    <h2 class="font-semibold mb-2">Skills ({{ skills|length }})</h2>
+    {% if skills %}
+    <ul class="text-xs space-y-1 max-h-96 overflow-auto">
+      {% for s in skills %}
+      <li class="border-b py-1 font-mono">
+        {% if s is mapping %}{{ s.get('name', s) }}{% else %}{{ s }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">조회 실패 또는 비어있음.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bg-white p-4 rounded shadow mt-4">
+<h2 class="font-semibold mb-2">바로가기</h2>
+<ul class="text-sm space-y-1">
+  <li>→ <a class="text-blue-600 hover:underline" href="http://bastion.300b.lab/health">bastion.300b.lab/health</a> (waf 경유)</li>
+  <li>→ <a class="text-blue-600 hover:underline" href="http://bastion.300b.lab/playbooks">/playbooks</a></li>
+  <li>→ <a class="text-blue-600 hover:underline" href="http://bastion.300b.lab/kg/health">/kg/health</a></li>
+  <li>→ ssh ccc@VM_IP -p 2204 (직접 진입 시 ReAct 채팅 TUI)</li>
+</ul>
+</div>
+
+{% endblock %}

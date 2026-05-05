@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Network | 300B Portal{% endblock %}
+{% block heading %}Network — VPC Topology{% endblock %}
+
+{% block content %}
+
+<div class="bg-white p-6 rounded shadow mb-6">
+<h2 class="font-semibold mb-3">트래픽 흐름</h2>
+<pre class="font-mono text-sm bg-slate-50 p-4 rounded overflow-x-auto">
+       Windows → :80,443       :2204
+                  │              │
+            ┌─────▼─────┐  ┌─────▼─────┐
+   Edge →  │  300b-fw  │  │  bastion  │
+            │ nft+socat │  │ jumphost  │
+            └─────┬─────┘  └─────┬─────┘
+                  │ 300b-dmz     │
+            ┌─────▼─────┐        │
+   DMZ →   │  300b-waf │← ids    │
+            │ +ModSec   │ sniff  │
+            └─────┬─────┘        │
+                  │ 300b-private │
+       ┌──────────┴───────────┐  │
+       ▼   Private (internal: true, no egress)
+   juiceshop · dvwa · neobank · govportal · mediforum · adminconsole · aicompanion
+
+       ▼  300b-mgmt (운영 망)
+   wazuh-* · siem · secu · attacker · bastion (모두 ssh 점프 통해서)
+</pre>
+</div>
+
+<!-- 네트워크별 컨테이너 -->
+<div class="grid grid-cols-2 gap-4">
+  {% for net_name, containers in by_network.items() %}
+  <div class="bg-white p-4 rounded shadow">
+    <h3 class="font-semibold mb-2">
+      <span class="font-mono text-sm">{{ net_name }}</span>
+      <span class="text-xs text-slate-500 ml-2">{{ containers|length }} 컨테이너</span>
+    </h3>
+    <ul class="text-sm space-y-1">
+      {% for c in containers %}
+      <li class="flex justify-between font-mono text-xs">
+        <span>{{ c.name }}</span>
+        <span class="text-slate-500">{{ c.ip }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

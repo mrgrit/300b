@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Resources | 300B Portal{% endblock %}
+{% block heading %}Resources — Container 목록 (EC2 instances){% endblock %}
+
+{% block content %}
+<div class="bg-white rounded shadow overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-200 text-slate-700">
+      <tr>
+        <th class="px-3 py-2 text-left">Name</th>
+        <th class="px-3 py-2 text-left">Tier</th>
+        <th class="px-3 py-2 text-left">Status</th>
+        <th class="px-3 py-2 text-left">Image</th>
+        <th class="px-3 py-2 text-left">Networks · IPs</th>
+        <th class="px-3 py-2 text-left">Host Ports</th>
+        <th class="px-3 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for c in containers %}
+      <tr class="hover:bg-slate-50">
+        <td class="px-3 py-2 font-mono">{{ c.name }}</td>
+        <td class="px-3 py-2">
+          {% for t in c.tiers %}
+          <span class="inline-block px-2 py-0.5 rounded text-xs
+            {% if t == 'Edge' %}bg-red-100 text-red-700
+            {% elif t == 'DMZ' %}bg-yellow-100 text-yellow-700
+            {% elif t == 'Private' %}bg-green-100 text-green-700
+            {% else %}bg-blue-100 text-blue-700{% endif %}">
+            {{ t }}
+          </span>
+          {% endfor %}
+        </td>
+        <td class="px-3 py-2">
+          <span class="{% if c.status == 'running' %}text-green-600{% else %}text-red-600{% endif %}">
+            ● {{ c.status }}
+          </span>
+        </td>
+        <td class="px-3 py-2 text-xs text-slate-600 truncate max-w-xs" title="{{ c.image }}">
+          {{ c.image[:40] }}{% if c.image|length > 40 %}…{% endif %}
+        </td>
+        <td class="px-3 py-2 text-xs">
+          {% for n in c.nics %}
+          <div><span class="text-slate-500">{{ n.network }}</span> {{ n.ip }}</div>
+          {% endfor %}
+        </td>
+        <td class="px-3 py-2 text-xs">
+          {% for p in c.ports %}<div>{{ p }}</div>{% endfor %}
+        </td>
+        <td class="px-3 py-2">
+          <a href="/logs/{{ c.name }}" class="text-blue-600 hover:underline text-xs">logs</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

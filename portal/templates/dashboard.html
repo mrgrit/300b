@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | 300B Portal{% endblock %}
+{% block heading %}Dashboard — 4-tier Overview{% endblock %}
+
+{% block content %}
+
+{% if err %}
+<div class="bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded mb-4">
+  Docker 연결 오류: {{ err }}
+</div>
+{% endif %}
+
+<!-- 상태 요약 카드 -->
+<div class="grid grid-cols-4 gap-4 mb-6">
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-xs text-slate-500">Running</div>
+    <div class="text-3xl font-bold text-green-600">{{ counts.running }}</div>
+  </div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-xs text-slate-500">Exited</div>
+    <div class="text-3xl font-bold text-red-600">{{ counts.exited }}</div>
+  </div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-xs text-slate-500">Other</div>
+    <div class="text-3xl font-bold text-slate-600">{{ counts.other }}</div>
+  </div>
+  <div class="bg-white p-4 rounded shadow">
+    <div class="text-xs text-slate-500">총 컨테이너</div>
+    <div class="text-3xl font-bold">{{ containers|length }}</div>
+  </div>
+</div>
+
+<!-- 4-tier 별 상태 -->
+<div class="grid grid-cols-2 gap-4 mb-6">
+  {% for tier in ['Edge', 'DMZ', 'Private', 'Mgmt'] %}
+  <div class="bg-white p-4 rounded shadow">
+    <div class="flex justify-between items-baseline mb-2">
+      <h2 class="font-semibold">{{ tier }}</h2>
+      <span class="text-xs text-slate-500">{{ by_tier[tier]|length }} 개</span>
+    </div>
+    <ul class="text-sm space-y-1">
+      {% for c in by_tier[tier] %}
+      <li class="flex justify-between">
+        <a href="/logs/{{ c.name }}" class="hover:text-blue-600">{{ c.name }}</a>
+        <span class="{% if c.status == 'running' %}text-green-600{% else %}text-red-600{% endif %}">
+          {{ c.status }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 최근 IDS / WAF 알람 -->
+<div class="grid grid-cols-2 gap-4">
+  <div class="bg-white p-4 rounded shadow">
+    <h2 class="font-semibold mb-2">🔍 IDS 최근 알람 (Top 5)</h2>
+    {% if ids_alerts %}
+    <ul class="text-xs space-y-1">
+      {% for a in ids_alerts %}
+      <li class="border-b py-1">
+        <div><strong>{{ a.signature }}</strong></div>
+        <div class="text-slate-500">{{ a.src_ip }} → {{ a.dst_ip }} · sev {{ a.severity }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-sm text-slate-500">알람 없음 또는 ids 컨테이너 미동작.</div>
+    {% endif %}
+    <a href="/ids" class="text-xs text-blue-600 hover:underline">전체 보기 →</a>
+  </div>
+
+  <div class="bg-white p-4 rounded shadow">
+    <h2 class="font-semibold mb-2">🛡️ WAF (ModSec) 최근 차단 (Top 5)</h2>
+    {% if modsec_recent %}
+    <ul class="text-xs space-y-1">
+      {% for e in modsec_recent %}
+      <li class="border-b py-1 truncate">{{ e.raw[:100] }}…</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-sm text-slate-500">차단 이벤트 없음.</div>
+    {% endif %}
+    <a href="/waf" class="text-xs text-blue-600 hover:underline">전체 보기 →</a>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Audit | 300B Portal{% endblock %}
+{% block heading %}Audit (CloudTrail) — Bastion sshd auth.log{% endblock %}
+
+{% block content %}
+<div class="bg-white p-4 rounded shadow mb-4">
+<p class="text-sm text-slate-600">
+  소스: <span class="font-mono">300b-bastion:/var/log/auth.log</span>.
+  Bastion 이 모든 내부 컨테이너 ssh 의 single audit point — 누가 언제 어디로 점프했는지 추적.
+</p>
+</div>
+
+<pre class="bg-slate-900 text-slate-100 p-4 rounded font-mono text-xs overflow-auto h-[70vh] whitespace-pre-wrap">{{ auth_log }}</pre>
+
+{% endblock %}

@@ -209,6 +209,7 @@ cmd_smoke() {
     check_host "ai"               "ai.300b.lab"          "/"
     check_host "wazuh dashboard"  "wazuh.300b.lab"       "/"   "200|301|302|503"
     check_host "bastion API"      "bastion.300b.lab"     "/health"
+    check_host "portal"           "portal.300b.lab"      "/health"
 
     echo
     echo "─── SSH 헬스 (bastion 만 외부 노출) ───"

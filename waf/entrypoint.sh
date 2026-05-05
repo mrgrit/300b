@@ -17,7 +17,7 @@ if [ -d /opt/cert-gen ] && [ "${ENABLE_TLS:-false}" = "true" ]; then
         bash /opt/cert-gen/gen.sh
     fi
     # 443 vhost 활성 (TLS 용)
-    for h in 00-landing juice dvwa neobank govportal mediforum admin ai wazuh bastion; do
+    for h in 00-landing juice dvwa neobank govportal mediforum admin ai wazuh bastion portal; do
         a2ensite "${h}-tls.conf" 2>/dev/null || true
     done
 fi

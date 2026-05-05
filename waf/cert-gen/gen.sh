@@ -13,7 +13,7 @@ if [ -f ca.pem ]; then
 fi
 
 DOMAIN_BASE="${DOMAIN_BASE:-300b.lab}"
-HOSTS=( landing juice dvwa neobank govportal mediforum admin ai wazuh bastion )
+HOSTS=( landing juice dvwa neobank govportal mediforum admin ai wazuh bastion portal )
 
 # Root CA
 openssl genrsa -out ca.key 4096 2>/dev/null

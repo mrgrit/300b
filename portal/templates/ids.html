@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}IDS | 300B Portal{% endblock %}
+{% block heading %}IDS (Suricata, GuardDuty 시뮬){% endblock %}
+
+{% block content %}
+
+<div class="grid grid-cols-3 gap-4">
+
+  <!-- Top signatures -->
+  <div class="bg-white p-4 rounded shadow col-span-1">
+    <h2 class="font-semibold mb-2">Top 10 Signatures</h2>
+    {% if top_sigs %}
+    <ul class="text-xs space-y-1">
+    {% for sig, n in top_sigs %}
+    <li class="flex justify-between border-b py-1">
+      <span class="truncate" title="{{ sig }}">{{ sig[:50] }}…</span>
+      <span class="text-blue-600 font-bold ml-2">{{ n }}</span>
+    </li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">아직 알람 없음.</p>
+    {% endif %}
+  </div>
+
+  <!-- Recent alerts -->
+  <div class="bg-white p-4 rounded shadow col-span-2">
+    <h2 class="font-semibold mb-2">Recent Alerts (eve.json)</h2>
+    {% if alerts %}
+    <table class="w-full text-xs">
+      <thead class="bg-slate-100">
+        <tr>
+          <th class="px-2 py-1 text-left">Time</th>
+          <th class="px-2 py-1 text-left">Sev</th>
+          <th class="px-2 py-1 text-left">Src</th>
+          <th class="px-2 py-1 text-left">Dst</th>
+          <th class="px-2 py-1 text-left">Signature</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+      {% for a in alerts %}
+      <tr>
+        <td class="px-2 py-1 font-mono">{{ a.ts[:19] }}</td>
+        <td class="px-2 py-1">
+          <span class="px-1.5 py-0.5 rounded
+            {% if a.severity == 1 %}bg-red-100 text-red-700
+            {% elif a.severity == 2 %}bg-orange-100 text-orange-700
+            {% else %}bg-yellow-100 text-yellow-700{% endif %}">{{ a.severity }}</span>
+        </td>
+        <td class="px-2 py-1 font-mono">{{ a.src_ip }}</td>
+        <td class="px-2 py-1 font-mono">{{ a.dst_ip }}</td>
+        <td class="px-2 py-1 truncate max-w-md" title="{{ a.signature }}">{{ a.signature }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-500">아직 알람 없음. attacker → web 공격 시 ids 가 sniff 해서 채워집니다.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Logs: {{ name }} | 300B Portal{% endblock %}
+{% block heading %}Logs — <span class="font-mono">{{ name }}</span>{% endblock %}
+
+{% block content %}
+<div class="mb-3 flex items-center gap-3">
+  <a href="/logs" class="text-sm text-blue-600 hover:underline">← 다른 컨테이너</a>
+  <span class="text-xs text-slate-500">5초 간격 자동 갱신</span>
+</div>
+
+<pre id="log-area"
+     class="bg-slate-900 text-slate-100 p-4 rounded font-mono text-xs overflow-auto h-[70vh] whitespace-pre-wrap"
+     hx-get="/logs/{{ name }}/tail"
+     hx-trigger="load, every 5s"
+     hx-swap="innerHTML">
+loading…
+</pre>
+{% endblock %}

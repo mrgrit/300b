@@ -34,14 +34,15 @@
 4. 학생 PC DNS 또는 hosts 설정 (USAGE.md §3 참조). VM IP 는 `bash 300b.sh status` 로 확인.
 5. 브라우저: `http://juice.300b.lab/`, `https://wazuh.300b.lab/` 등.
 
-## 컨테이너 구성 (총 17개)
+## 컨테이너 구성 (총 18개)
 
 | Tier | 컨테이너 | 역할 |
 |------|----------|------|
 | **Edge** | 300b-fw | nftables + socat L4 forward (host:80,443 → waf) + dnsmasq |
-| **DMZ** | 300b-waf | Apache + ModSecurity + OWASP CRS, 9 vhost reverse proxy, self-signed CA |
+| **DMZ** | 300b-waf | Apache + ModSecurity + OWASP CRS, 10 vhost reverse proxy, self-signed CA |
 | **DMZ sidecar** | 300b-ids | Suricata IDS passive sniff, eve.json → siem |
 | **Mgmt** | 300b-bastion | SSH jumphost + Bastion API + KG |
+| **Mgmt** | 300b-portal | **AWS Console 풍 운영 대시보드** (FastAPI + Jinja2 + HTMX) |
 | **Mgmt** | 300b-secu | nftables/Suricata/dnsmasq 학습용 |
 | **Mgmt** | 300b-siem | rsyslog 수신 + cti-collector |
 | **Mgmt** | 300b-attacker | 13 도구 + Metasploit (private 에 dual-NIC) |
@@ -64,7 +65,23 @@ http://admin.300b.lab/         AdminConsole
 http://ai.300b.lab/            AICompanion (외부 LLM 사용)
 https://wazuh.300b.lab/        Wazuh Dashboard (admin / SecretPassword)
 http://bastion.300b.lab/health Bastion API
+http://portal.300b.lab/        ★ 운영 포털 (Dashboard / EC2 / VPC / Logs / WAF / IDS / Audit / Agent)
 ```
+
+### 운영 포털 (portal.300b.lab) — AWS Console 풍
+
+학생/강사가 한 화면에서 인프라 전체 상태를 보는 학습용 대시보드:
+
+| 페이지 | AWS 유사 | 데이터 source |
+|-------|---------|--------------|
+| `/` Dashboard | (홈) | docker socket — 4-tier 컨테이너 카운트 + 최근 알람 |
+| `/resources` | EC2 instances | docker socket — 18 컨테이너 표 (이름/tier/IP/포트/이미지) |
+| `/network` | VPC | 4 docker network 토폴로지 + 컨테이너별 IP |
+| `/logs` | CloudWatch Logs | `docker logs` 실시간 polling (5초) |
+| `/waf` | WAF Console | waf 의 modsec_audit.log 차단 이벤트 |
+| `/ids` | GuardDuty | suricata eve.json alerts + Top 10 signatures |
+| `/audit` | CloudTrail | bastion 의 sshd auth.log (single audit point) |
+| `/agent` | (운영 자동화) | bastion API health / skills / KG |
 
 학생 PC 가 `*.300b.lab` 을 VM IP 로 해석하려면 1택:
 

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}300B Portal{% endblock %}</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .nav-active { background-color: #1f2937; color: #fbbf24; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+
+<div class="flex h-screen">
+  <!-- 좌측 nav (AWS Console 풍) -->
+  <nav class="w-56 bg-slate-900 text-slate-200 flex flex-col">
+    <div class="px-4 py-4 border-b border-slate-700">
+      <div class="text-xl font-bold text-amber-400">300B Portal</div>
+      <div class="text-xs text-slate-400">AWS-style Console</div>
+    </div>
+    <ul class="flex-1 py-2 text-sm">
+      {% set items = [
+        ('dashboard', '/',          '🏠', 'Dashboard'),
+        ('resources', '/resources', '🖥️', 'Resources (EC2)'),
+        ('network',   '/network',   '🌐', 'Network (VPC)'),
+        ('logs',      '/logs',      '📜', 'Logs (CloudWatch)'),
+        ('waf',       '/waf',       '🛡️', 'WAF (ModSec)'),
+        ('ids',       '/ids',       '🔍', 'IDS (GuardDuty)'),
+        ('audit',     '/audit',     '🔐', 'Audit (CloudTrail)'),
+        ('agent',     '/agent',     '🤖', 'Bastion Agent'),
+      ] %}
+      {% for key, url, icon, label in items %}
+      <li>
+        <a href="{{ url }}"
+           class="flex items-center gap-2 px-4 py-2 hover:bg-slate-800 {% if page == key %}nav-active{% endif %}">
+          <span>{{ icon }}</span><span>{{ label }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">
+      <div>외부 링크</div>
+      <a href="https://wazuh.300b.lab/" class="block text-slate-300 hover:text-amber-400 mt-1">→ Wazuh Dashboard</a>
+      <a href="http://bastion.300b.lab/health" class="block text-slate-300 hover:text-amber-400">→ Bastion API</a>
+    </div>
+  </nav>
+
+  <!-- 본문 -->
+  <main class="flex-1 overflow-auto">
+    <header class="bg-white border-b px-6 py-3 flex items-center justify-between">
+      <h1 class="text-lg font-semibold">{% block heading %}{% endblock %}</h1>
+      <div class="text-xs text-slate-500">portal.300b.lab · 운영자/강사 전용 학습 대시보드</div>
+    </header>
+    <div class="p-6">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

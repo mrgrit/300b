@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}WAF | 300B Portal{% endblock %}
+{% block heading %}WAF (ModSecurity) — 차단 이벤트{% endblock %}
+
+{% block content %}
+<div class="bg-white p-4 rounded shadow mb-4">
+<p class="text-sm text-slate-600">
+  소스: <span class="font-mono">300b-waf:/var/log/apache2/modsec_audit.log</span>.
+  <strong>SecAuditEngine RelevantOnly</strong> 라 ModSec 룰이 매칭된 (4xx/5xx) 요청만 기록됩니다.
+</p>
+</div>
+
+{% if entries %}
+<div class="bg-white rounded shadow divide-y">
+{% for e in entries %}
+<div class="p-3">
+  <pre class="font-mono text-xs whitespace-pre-wrap text-slate-700">{{ e.raw }}</pre>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="bg-white p-6 rounded shadow text-sm text-slate-500">
+차단 이벤트 없음. 학생이 attacker 컨테이너에서 sqlmap 등으로 공격하면 여기 표시됩니다.
+</div>
+{% endif %}
+{% endblock %}
