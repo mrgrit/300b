@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 # 역할:
 #   1. host:80, host:443 trafic 받아서 dmz 의 waf 로 DNAT 포워딩
 #   2. nftables egress allowlist (mgmt 망에 한정 — Phase B)
-#   3. dnsmasq 로 *.300b 도메인 사설 DNS 서비스 (Phase D)
+#   3. dnsmasq 로 *.300b.lab 도메인 사설 DNS 서비스 (Phase D)
 #   4. ssh 학습용 (학생이 nft list ruleset 등 직접 확인)
 
 ENV DEBIAN_FRONTEND=noninteractive

@@ -296,7 +296,7 @@ services:
     networks:
       300b-mgmt:
         aliases: [wazuh.dashboard, wazuh-dashboard]
-    # Dashboard 도 외부 포트 노출 X. waf 의 wazuh.300b vhost 만으로 접근.
+    # Dashboard 도 외부 포트 노출 X. waf 의 wazuh.300b.lab vhost 만으로 접근.
     <<: *common-restart
 
   # ============================================
