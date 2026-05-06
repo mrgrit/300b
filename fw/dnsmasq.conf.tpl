@@ -6,12 +6,13 @@
 # dnsmasq 문법: 도메인 앞에 점(.) 붙이지 말 것 — 그래야 sub-domain wildcard 동작.
 address=/300b.lab/${HOST_IP}
 
-# 로컬 docker DNS 로 fallback (컨테이너 이름 해석 — 다른 컨테이너 이름 질의 대응)
-server=127.0.0.11
-
 # 외부 도메인 forwarding — 학생이 일반 인터넷도 사용 가능하도록.
+# 주의: server=127.0.0.11 (docker embedded DNS) 추가 금지.
+#       dnsmasq → docker DNS → 외부 resolver 재귀 → CPU 폭주 / UDP 큐 적체 발생.
 server=8.8.8.8
 server=1.1.1.1
+# strict-order — 위 server 순서대로 시도 (병렬 forward 로 인한 응답 race 방지).
+strict-order
 
 # 인터페이스 — fw 의 모든 NIC 에서 listen.
 listen-address=0.0.0.0
